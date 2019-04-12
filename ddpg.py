@@ -34,12 +34,17 @@ class Monitor(object):
 
         solved = False
         solved_episodes = 0
+
         for i_episode in range(params.num_episodes):
             env_info = env.reset(train_mode=True)[brain_name]
             state = env_info.vector_observations[0]
+            agent.reset()
             score = 0
 
+            steps_done = 0
             while True:
+                steps_done += 1
+
                 action = agent.get_action(state)
 
                 env_info = env.step(action)[brain_name]
@@ -49,6 +54,8 @@ class Monitor(object):
                 score += reward
 
                 memory.push(state, action, new_state, reward, done)
+
+                #if steps_done % 20 == 0:
                 agent.optimize()
 
                 state = new_state

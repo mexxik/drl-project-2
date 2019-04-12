@@ -15,16 +15,16 @@ class Parameters(object):
         self.solve_score = 30
 
         self.replay_capacity = 100000
-        self.batch_size = 64
+        self.batch_size = 128
 
         self.gamma = 0.99
 
-        self.learning_rate_actor = 0.0001
-        self.learning_rate_critic = 0.001
+        self.learning_rate_actor = 1e-4
+        self.learning_rate_critic = 1e-3
 
         self.weight_decay = 0
 
-        self.tau = 0.001
+        self.tau = 1e-3
 
 
 class ExperienceReplay(object):
@@ -83,7 +83,7 @@ class NeuralNetwork(torch.nn.Module):
     def reset_parameters(self):
         self.fc1.weight.data.uniform_(*self._init_hidden(self.fc1))
         self.fc1.weight.data.uniform_(*self._init_hidden(self.fc2))
-        self.fc1.weight.data.uniform_(-0.003, 0.003)
+        self.fc1.weight.data.uniform_(-3e-3, 3e-3)
 
     def forward(self, state, action=None):
         if self.is_critic:
@@ -96,7 +96,7 @@ class NeuralNetwork(torch.nn.Module):
             x = F.relu(self.fc1(state))
             x = F.relu(self.fc2(x))
 
-            return F.tanh(self.fc3(x))
+            return torch.tanh(self.fc3(x))
 
 
 class Noise(object):
@@ -154,6 +154,9 @@ class Agent(object):
                   math.exp(-1. * total_steps / self.params.e_greedy_decay)
         return epsilon
 
+    def reset(self):
+        self.noise.reset()
+
     def get_action(self, state):
         self.total_steps += 1
 
@@ -169,41 +172,42 @@ class Agent(object):
         return np.clip(action, -1, 1)
 
     def optimize(self):
-        if len(self.memory) < self.params.batch_size:
-            return
+        for i in range(20):
+            if len(self.memory) < self.params.batch_size:
+                break
 
-        state, action, next_state, reward, done = self.memory.sample()
+            state, action, next_state, reward, done = self.memory.sample()
 
-        state = Tensor(state).to(device)
-        next_state = Tensor(next_state).to(device)
+            state = Tensor(state).to(device)
+            next_state = Tensor(next_state).to(device)
 
-        reward = Tensor(reward).to(device)
-        action = Tensor(action).to(device)
-        done = Tensor(done).to(device)
+            reward = Tensor(reward).to(device)
+            action = Tensor(action).to(device)
+            done = Tensor(done).to(device)
 
-        # critic update
-        next_action = self.actor_target(next_state)
-        Q_target_next = self.critic_target(next_state, next_action)
+            # critic update
+            next_action = self.actor_target(next_state)
+            Q_target_next = self.critic_target(next_state, next_action)
 
-        Q_target = reward + (1 - done) * self.params.gamma * Q_target_next
+            Q_target = reward + (1 - done) * self.params.gamma * Q_target_next
 
-        Q_expected = self.critic_local(state, action)
-        critic_loss = F.mse_loss(Q_expected, Q_target)
+            Q_expected = self.critic_local(state, action)
+            critic_loss = F.mse_loss(Q_expected, Q_target)
 
-        self.critic_optimizer.zero_grad()
-        critic_loss.backward()
-        self.critic_optimizer.step()
+            self.critic_optimizer.zero_grad()
+            critic_loss.backward()
+            self.critic_optimizer.step()
 
-        #actor update
-        action_pred = self.actor_local(state)
-        actor_loss = -self.critic_local(state, action_pred).mean()
+            #actor update
+            action_pred = self.actor_local(state)
+            actor_loss = -self.critic_local(state, action_pred).mean()
 
-        self.actor_optimizer.zero_grad()
-        actor_loss.backward()
-        self.actor_optimizer.step()
+            self.actor_optimizer.zero_grad()
+            actor_loss.backward()
+            self.actor_optimizer.step()
 
-        self.soft_update(self.critic_local, self.critic_target, self.params.tau)
-        self.soft_update(self.actor_local, self.actor_target, self.params.tau)
+            self.soft_update(self.critic_local, self.critic_target, self.params.tau)
+            self.soft_update(self.actor_local, self.actor_target, self.params.tau)
 
     def soft_update(self, local_model, target_model, tau):
         for target_param, local_param in zip(target_model.parameters(), local_model.parameters()):
